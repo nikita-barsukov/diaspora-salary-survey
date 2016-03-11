@@ -1,0 +1,202 @@
+---
+title: "Зарплатный опрос в датской диаспоре"
+author: "Никита Барсуков"
+date: "6 декабря 2015 год"
+output:
+  html_document:
+    css: style.css
+    fig_caption: yes
+    keep_md: yes
+    number_sections: yes
+    theme: readable
+---
+```{r read_ds, echo=FALSE}
+options(scipen = 999999)
+library(ggplot2)
+library(scales)
+library(ggthemr)
+library(reshape)
+df = read.csv('Data_All_151206/CSV/Sheet_1.csv')
+df = df[,10:13]
+colnames(df) = c('salary.gross', 'salary.net','in.cph','gender')
+
+ggthemr('fresh')
+```
+Несколько недель назад среди украинцев в Дании мы провели зарплатный опрос. 
+
+В анкете были четыре простых вопроса: зарплата до и после налогов, пол и живет ли респондент в Копенгагене, или нет. Все поля были обязательными для заполнения. В поля зарплат можно вводить только числа, а пол и место жительства сделаны как радио кнопки с двумя вариантами. Анкету можно было заполнить только один раз, порядок вариантов в полях выбора был случаен. Конечно, все ответы анонимные, никакой дополнительной информации не фиксировалось.
+
+Из-за того, что вопросник был максимально простой и короткий, явно некорректных данных практически не было. Некоторые указали зарплату в тысячах крон (52 вместо 52 000, например). В таких случаях я просто добавил три нолика. Кроме того, в части анкет указаны одинаковые зарплаты до и после налогов. Я решил их оставить.
+
+Hачнем с резюме выборки. Из 92 анкет, мужчин и женщин почти поровну:  47 мужчин, 45 женщин. Почти две трети из Копенгагена: 60 человек. Средняя зарплата в выборке: `r format(mean(df$salary.gross), big.mark=" ")` крон в месяц до налогов и `r format(mean(df$salary.net), big.mark=" ")` после налогов. 
+
+Гистограмма зарплат до и после налогов выглядит так:
+
+```{r salary_histograms, echo=FALSE, fig.cap='Распределение зарплат до и после налогов'}
+hist.df = melt(df[,c('salary.gross','salary.net')])
+library(plyr)
+hist.df$variable = revalue(hist.df$variable, c('salary.gross' = "До налогов",
+                                               'salary.net' = "После налогов" ))
+pl.hist = ggplot(data=hist.df) + 
+  geom_histogram(aes(x=value),
+                 binwidth = 10000, color='white') + 
+  facet_grid(variable ~ .) +
+  ggtitle('Распределение зарплат диаспорян') +
+  scale_x_continuous(name='Месячная зарплата', labels=comma) +
+  scale_y_continuous(name='Число анкет') 
+print(pl.hist)
+```
+
+Распределение зарплат до налогов более или менее равномерное, большого перекоса в результатах опроса нет. С чистыми зарплатами картина другая: выделяется диапазон 15--20 тыcяч крон в меcяц, в который попадают большинство указанных в анкетах чистых зарплат.
+
+Теперь посмотрим на соотношение чистых и грязных зарплат, и попробуем выяснить, как же расчитывается сумма налогов с зарплаты.
+
+```{r salary_scatter, echo=FALSE, fig.cap='Зарплата диаспорян до и после налогов'}
+pl.scatter = ggplot(data=df, aes(x=salary.gross, y=salary.net)) + 
+  geom_point(aes(color=gender)) +
+  stat_smooth(method = "lm", se = FALSE) +
+  ggtitle('Зарплата диаспорян до и после налогов') +
+  scale_color_discrete(labels=c("Женщины", "Мужчины"), name='') +
+  scale_x_continuous(name='Грязная зарплата', labels=comma) +
+  scale_y_continuous(name='Чистая зарплата', labels=comma)
+print(pl.scatter)
+```
+
+Тут начинаются неожиданности. Во-первых мы видим линейную зависимость между грязной и чистой зарплатами, никакой убывающей отдачи от каждой дополнительной заработанной кроны нет. И во-вторых эта зависимость явно выраженная, шума и случайных отклонений очень мало. 
+
+Воспользовавшись инструментами математики, мы можем получить формулу, по которой можно оценить сколько живых денег мы получим. Кроме того мы можем оценить насколько эта формула точна в оценке чистой зарплаты.
+
+```{r linear_regression, echo=FALSE}
+lm.obj = lm(salary.net ~ salary.gross, data=df)
+smr = summary(lm.obj)
+
+vars = c(unname(lm.obj$coefficients[2]), 
+         unname(lm.obj$coefficients[1]),
+         median(smr$residuals),
+         smr$r.squared)
+names=c("Коэффициент: грязная зарплата",
+"Постоянная",
+"Медианная ошибка",
+"Коэффициент R-squared")
+table_data = cbind.data.frame(names, vars)
+knitr::kable(format(table_data,big.mark=',', digits=2 ), 
+             align='l', 
+             col.names=c("Параметр", "Значение"),
+             caption='Параметры зависимости между зарплатой до и после налогов')
+```
+
+Наша гипотеза о сильной линейной зависимости подтвердилась: найденная формула объясняет `r percent(smr$r.squared)` колебаний чистой зарплаты. Формула, по которой можно оценить ваш чистый доход такова:
+
+<code>
+Чистая ЗП = 0.5288 × Грязная ЗП + 3475,81
+</code>
+
+Исходя из данных опроса, из каждой **дополнительно** заработанной кроны 47 эре уходит на налоги. 
+
+Теперь давайте посмотрим на разницу в зарплатах между разными группами.
+
+```{r groups_sum, echo=FALSE}
+groups.df = rbind(setNames(aggregate(salary.gross ~ gender, df, mean), 
+                           c('group', 'mean.salary')), 
+      setNames(aggregate(salary.gross ~ in.cph, df, mean), 
+               c('group', 'mean.salary')))
+
+groups.df = rbind(c('По всем анкетам', mean(df$salary.gross)), groups.df)
+groups.df$group = c('По всем анкетам',"Женщины", "Мужчины", 
+                    "Не в столице", "В столице")
+groups.df$mean.salary = as.numeric(groups.df$mean.salary)
+
+knitr::kable(format(groups.df,big.mark=',', digits=2), 
+             align='l', 
+             col.names=c("Группа", "Средняя зарплата,<br>DKK"),
+             caption='Средняя зарплата до налогов в разных группах')
+```
+
+В столице получают больше чем в провинции, а мужчины получают больше, чем женщины. При более пристальном рассмотрении, разница между зарплатами женщин и мужчин сравнительно небольшая, и гораздо меньше разницы между провинцией и столицей. 
+
+Имеет смысл определить, насколько статистически значима эта разница. Другими словами, какова вероятность того, что эта разница возникла из-за погрешности, ошибок сбора анкет, и т.д.
+
+Здесь мы воспользуемся t-критерием Стьюдентa (t-test). Нашей основной гипотезой будет "Настоящая разница между зарплатами мужчин и женщин среди диаспорян в Дании равна нулю". Альтернативная гипотеза: "Зарплаты женщин среди диаспорян в Дании меньше, чем у мужчин". Мы будет использовать односторонний двувыборочный критерий Стьюдента (one-tailed non-paired t-test). Его параметры таковы:
+ 
+```{r t.test.gender, echo=FALSE}
+t.test.obj = t.test(salary.gross ~ gender, data=df, alternative='less')
+
+params=c(format(unname(t.test.obj$statistic), digits=2),
+         format(qt(1-.95, t.test.obj$parameter),digits=2),
+         format(t.test.obj$p.value, digits = 2),
+         paste('-∞ —', format(t.test.obj$conf.int[2], digits=2))
+         )
+names=c("Коэффициент Стьюдента (t-score)",
+"Критический коэффициент Стьюдента",
+"Р-значение",
+"Доверительный интервал, 95%")
+t.test.params = cbind(names, params)
+
+knitr::kable(format(t.test.params,big.mark=',', digits=2), 
+             align='l', 
+             col.names=c("параметр", "значение"),
+             caption='Параметры критерия Стьюдента для средних зарплат мужчин и женщин')
+```
+
+Такми образом разница в зарплатах мужчин и женщин в датской диаспоре статистически незначительная, и му можем утверждать, что украинские мужчины и женщины в Дании получают равную зарплату.
+
+Теперь посмотрим на то, как зарплаты диаспоры относятся к зарплатам по всей Дании. Данные по всей стране я взял с сайта датского статистичесого бюро, http://www.statistikbanken.dk/LONS30
+
+```{r diaspor.vs.dk, echo=FALSE, fig.cap='Средняя зарплата по группам'}
+type = c("Всего", "Женщины", "Мужчины", "Копенгаген")
+dk.salary = c(38957.98,35914.89,41801.62,42724.35)
+diaspora.salary = c(mean(df$salary.gross), 
+                    aggregate(salary.gross ~ gender, df, mean)[,2],
+                    aggregate(salary.gross ~ in.cph, df, mean)[2,2])
+compare.df = cbind.data.frame(type, dk.salary, diaspora.salary)
+
+knitr::kable(format(compare.df,big.mark=',', digits=2), 
+             align='l', 
+             col.names=c("Группа","Средняя по Дании", "Средняя в диаспоре"),
+             caption='Зарплата до налогов по группам, в целом в Дании и в диаспоре.')
+
+library(reshape)
+compare.df.melt = melt(compare.df)
+pl.means = ggplot(data = compare.df.melt,aes(x=type, y=value)) + 
+  geom_bar(data=subset(compare.df.melt, variable=='dk.salary'), 
+           stat='identity', width=.05, fill='#ababab') +
+  geom_point(size=5, aes(color=variable)) +
+  scale_y_continuous(labels=comma, name='') +
+  scale_x_discrete(name='') +
+  scale_color_discrete(labels=c("Дания","Диаспора"), name="") +
+  ggtitle(expression(atop("Средняя зарплата по группам", 
+                          atop(italic("Данные зарплатного опроса и Danmarks Statistik"), "")))) +
+  coord_flip()
+
+print(pl.means)
+```
+
+Картина красноречивая: по всем группам зарплаты приезжих из Украины меньше, чем в целом. Но является ли эта разница статистически значимой? 
+
+Мы воспользуемся критерием Стьюдента еще раз, чтобы это выяснить. Здесь мы воспользуемся одновыборочным t-критерием, будем сравнивать среднюю зарплату в группе диаспоры с соответствующим значением из статистического бюро. Основная гипотеза: "зарплаты диаспоры равны", альтернативная: "Зарплаты диаспоры меньше", доверительный уровень 95%.
+
+```{r t.test.groups, echo=FALSE}
+
+p.scores = percent(c(
+  t.test(df$salary.gross, 
+         mu=38957, 
+         alternative='less')$p.value,
+  t.test(df[df$gender=='Чоловік','salary.gross'], 
+                    mu=41801.62, 
+                    alternative='less')$p.value,
+  t.test(df[df$gender=='Жінка','salary.gross'], 
+                    mu=35914.89, 
+                    alternative='less')$p.value,
+  t.test(df[df$in.cph=='Так','salary.gross'], 
+                    mu=42724.35,  
+                    alternative='less')$p.value))
+
+names = c("Всего в опросе","Мужчины", "Женщины","Копенгаген")
+p.values.df = cbind.data.frame(names, p.scores)
+knitr::kable(p.values.df, 
+             align='l', 
+             col.names=c("Группа", "Шанс, что разница случайна,<br/>p-value"),
+             caption='Статистическая значимость разницы зарплат диаспоры со средним по Дании.')
+```
+
+Тут ситуация противоречивая. Только у женщин разница в зарплатах со средней в своей группе незначительна, мужчины и жители Копенгагена получают существенно меньше, чем среднестатистический житель Дании. Интерпретацию этих данных мы предоставим читателю.
