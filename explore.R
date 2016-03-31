@@ -45,15 +45,13 @@ compare.df = cbind.data.frame(type, dk.salary, diaspora.salary)
 library(reshape)
 compare.df.melt = melt(compare.df)
 
-pl.hist = ggplot(data=melt(df[,c('salary.gross','salary.net')])) + 
-  geom_histogram(aes(x=value, fill=variable, alpha=variable),
+pl.hist = ggplot(data=hist.df) + 
+  geom_histogram(aes(x=value),
                  binwidth = 10000, color='white') + 
+  facet_grid(variable ~ .) +
   ggtitle('Распределение зарплат диаспорян') +
-  scale_x_continuous(name='Грязная зарплата', labels=comma) +
-  scale_y_continuous(name='Число анкет') +
-  scale_fill_discrete(labels=c("До налогов", "После налогов"), name='')+
-  guides(fill = guide_legend(override.aes = list(colour = NULL))) +
-  scale_alpha_manual(values=c(0.5,1), guide=FALSE)
+  scale_x_continuous(name='Месячная зарплата', labels=comma) +
+  scale_y_continuous(name='Число анкет') 
 print(pl.hist)
 
 pl.means = ggplot(data = compare.df.melt,aes(x=type, y=value)) + 
